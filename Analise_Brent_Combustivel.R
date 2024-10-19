@@ -1,0 +1,203 @@
+# Carregando os pacotes necessários
+install.packages("tidyverse")
+install.packages("forecast")
+install.packages("summarytools")
+install.packages("tseries")
+install.packages("urca")
+install.packages("magrittr")
+install.packages("ggplot2")
+
+library(tidyverse)
+library(readxl)
+library(ggplot2)
+library(forecast)
+library(summarytools)
+library(tseries)
+library(urca)
+library(magrittr)
+library(purrr)
+library(rlang)
+
+# Lendo os dados de Brent
+Brent <- read_csv("C:/Users/Home/OneDrive/MBA Data Science & Analytics/TCC/TCC_Data Science & Analytics/brent.csv", locale = locale(decimal_mark = ","))
+Brent <- Brent %>%
+  select(Data, Último)
+head(Brent, N = 5)
+
+# Lendo os dados de Combustível
+Combustível <- read_excel("C:/Users/Home/OneDrive/MBA Data Science & Analytics/TCC/TCC_Data Science & Analytics/combustivel.xlsx", skip = 17)
+Combustível <- Combustível %>%
+  select(`DATA INICIAL`, PRODUTO, `PREÇO MÉDIO REVENDA`)
+head(Combustível, N = 5)
+
+# Lendo os dados de Dólar
+Dolár <- read_csv("C:/Users/Home/OneDrive/MBA Data Science & Analytics/TCC/TCC_Data Science & Analytics/usd.csv", locale = locale(decimal_mark = ","))
+Dolár <- Dolár %>%
+  select(Data, Último)
+head(Dolár, N = 5)
+
+# Convertendo colunas de data para formato Date em Combustível
+Combustível <- Combustível %>%
+  mutate(`DATA INICIAL` = as.Date(`DATA INICIAL`, format = "%Y-%m-%d"))
+
+# Convertendo colunas de data para formato Date em Dólar e Brent
+Dolár <- Dolár %>%
+  mutate(Data = as.Date(Data, format = "%d.%m.%Y"))
+Brent <- Brent %>%
+  mutate(Data = as.Date(Data, format = "%d.%m.%Y"))
+
+# Convertendo colunas numéricas para tipo de dados numérico em Dolár e Brent
+Dolár <- Dolár %>%
+  mutate(Último = as.numeric(Último))
+Brent <- Brent %>%
+  mutate(Último = as.numeric(Último))
+
+print(Dolár)
+print(Brent)
+
+# Mesclando os dataframes Dolár e Brent com base na data
+Brent_Reais <- inner_join(Dolár, Brent, by = "Data")
+
+# Calculando o produto dos valores "Último"
+Brent_Reais <- Brent_Reais %>%
+  mutate(ValorBrent = Último.x * Último.y)
+
+# Selecionando apenas a coluna "ValorBrent" do dataframe Brent_Reais
+Brent_Reais_ValorBrent <- Brent_Reais %>%
+  select(Data, ValorBrent)
+
+print(Brent_Reais_ValorBrent)
+
+# Usando a função spread para organizar os produtos na forma de colunas em Combustível
+Combustível <- Combustível %>%
+  spread(PRODUTO, `PREÇO MÉDIO REVENDA`)
+
+print(Combustível)
+
+# Renomeando a coluna "DATA INICIAL" para "Data" em Combustível
+names(Combustível)[1] <- "Data"
+
+# Realizando o join apenas com a coluna "ValorBrent" do dataframe Brent_Reais
+Combustíveis_Brent_Reais <- inner_join(Combustível, Brent_Reais_ValorBrent, by = "Data")
+
+print(Combustíveis_Brent_Reais)
+
+# Selecionando apenas os produtos de interesse
+produtos_interesse <- c("GASOLINA COMUM", "OLEO DIESEL", "ETANOL HIDRATADO")
+
+Combustíveis_Brent_Reais <- Combustíveis_Brent_Reais %>%
+  select(Data, all_of(produtos_interesse), ValorBrent)
+
+# Transformando os dados em formato longo
+Combustíveis_Brent_Reais_long <- Combustíveis_Brent_Reais %>%
+  gather(key = "Produto", value = "Preço", -Data, -ValorBrent)
+
+print(Combustíveis_Brent_Reais_long)
+
+# Criando o gráfico de dispersão com linha de tendência
+ggplot(Combustíveis_Brent_Reais_long, aes(x = ValorBrent, y = Preço)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +
+  facet_wrap(~ Produto, scales = "free") +
+  labs(x = "Preço do Brent", y = "Preço Médio de Revenda") +
+  ggtitle("Preço de Combustíveis vs Preço do Brent por Tipo de Combustível") +
+  theme_minimal()
+
+# Filtrando os dados para cada tipo de combustível
+gasolina_data <- subset(Combustíveis_Brent_Reais_long, Produto == "GASOLINA COMUM")
+diesel_data <- subset(Combustíveis_Brent_Reais_long, Produto == "OLEO DIESEL")
+etanol_data <- subset(Combustíveis_Brent_Reais_long, Produto == "ETANOL HIDRATADO")
+
+# Calculando as correlações
+cor_gasolina <- cor(gasolina_data$ValorBrent, gasolina_data$Preço)
+cor_diesel <- cor(diesel_data$ValorBrent, diesel_data$Preço)
+cor_etanol <- cor(etanol_data$ValorBrent, etanol_data$Preço)
+
+# Imprimindo as correlações arredondadas
+print(paste("Correlação GASOLINA COMUM:", round(cor_gasolina, 3)))
+print(paste("Correlação OLEO DIESEL:", round(cor_diesel, 3)))
+print(paste("Correlação ETANOL HIDRATADO:", round(cor_etanol, 3)))
+
+# Criando o gráfico de linha ao longo do tempo
+ggplot(Combustíveis_Brent_Reais_long, aes(x = Data)) +
+  geom_line(aes(y = ValorBrent, color = "BRENT"), size = 0.6) +
+  geom_line(aes(y = Preço, color = Produto), size = 0.6) +
+  labs(x = "Período", y = "Valor (R$)", color = "Legenda") +
+  ggtitle("Evolução do Preço de Combustíveis e Valor do Brent ao longo do Tempo") +
+  theme_bw() +
+  scale_y_continuous(trans = "log10")
+
+# Calculando estatísticas descritivas
+summary_stats <- Combustíveis_Brent_Reais %>%
+  select(-Data) %>%
+  summarytools::dfSummary()
+
+# Salvando as estatísticas descritivas em um arquivo HTML
+summarytools::view(summary_stats, method = "browser")
+
+# Ajustando modelos ARIMA para cada produto e gerando previsões para os próximos 6 meses
+previsoes_produtos <- list()
+modelos_arima <- list()
+
+for (produto in produtos_interesse) {
+  # Extraindo a série temporal para o produto atual, removendo valores NA
+  serie_temporal <- Combustíveis_Brent_Reais %>%
+    filter(!is.na(.[[produto]])) %>%
+    pull(produto)
+  
+  # Ajustando o modelo ARIMA automaticamente à série temporal
+  modelo_arima <- auto.arima(serie_temporal)
+  
+  # Salvando o modelo ARIMA ajustado para o produto atual
+  modelos_arima[[produto]] <- modelo_arima
+  
+  # Fazendo previsões para os próximos períodos (h = 12)
+  previsoes <- forecast(modelo_arima, h = 52)
+  
+  # Convertendo as previsões em um dataframe e salvando-as
+  previsoes_produtos[[produto]] <- as.data.frame(previsoes$mean)
+  
+  # Verificando os resíduos do modelo
+  cat(paste("\nResíduos do modelo ARIMA para", produto, ":\n"))
+  checkresiduals(modelo_arima)
+}
+
+# Correlacionar cada produto com o preço do Brent
+correlacoes <- list()
+for (produto in produtos_interesse) {
+  correlacoes[[produto]] <- cor(Combustíveis_Brent_Reais$ValorBrent, Combustíveis_Brent_Reais[[produto]], use = "complete.obs")
+}
+
+# Visualizar as previsões e correlações
+for (produto in produtos_interesse) {
+  cat(paste("\nPrevisões para", produto, ":\n"))
+  print(head(previsoes_produtos[[produto]]))
+  cat(paste("\nCorrelação de", produto, "com o preço do Brent:", correlacoes[[produto]], "\n"))
+}
+
+# Exibindo os resultados dos modelos ARIMA
+for (produto in produtos_interesse) {
+  cat(paste("\nResultados do modelo ARIMA para", produto, ":\n"))
+  print(summary(modelos_arima[[produto]]))
+}
+
+# Gráficos de correlação entre Brent e cada produto
+for (produto in produtos_interesse) {
+  p <- ggplot(Combustíveis_Brent_Reais, aes(x = ValorBrent, y = !!sym(produto))) +
+    geom_point(alpha = 0.6) +
+    geom_smooth(method = "lm", color = "blue", se = FALSE) +
+    labs(x = "Preço do Brent", y = paste("Preço Médio de Revenda de", produto)) +
+    ggtitle(paste("Correlação entre Preço do Brent e", produto)) +
+    theme_minimal()
+  print(p)
+}
+
+# Gráficos dos modelos ARIMA
+for (produto in produtos_interesse) {
+  previsao <- forecast(modelos_arima[[produto]], h = 52)  # Previsão para os próximos 6 meses
+  p <- autoplot(previsao) +
+    labs(title = paste("Previsões do Modelo ARIMA para", produto), x = "Tempo", y = "Preço") +
+    theme_minimal()
+  print(p)
+}
+

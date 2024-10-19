@@ -1,0 +1,123 @@
+# Instalando e carregando os pacotes necessários
+install.packages("tidyverse")
+install.packages("forecast")
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(ggplot2)
+
+# Lendo os dados de Brent
+Brent <- read_csv("C:/Users/flavi/OneDrive/MBA Data Science & Analytics/TCC/TCC_Data Science & Analytics/brent.csv")
+Brent <- Brent %>%
+select(Data,Último)
+head(Brent,N=5)
+
+# Lendo os dados de Combustível
+Combustível <- read_excel("C:/Users/flavi/OneDrive/MBA Data Science & Analytics/TCC/TCC_Data Science & Analytics/combustivel.xlsx", skip = 17)
+Combustível <- Combustível %>%
+  select(`DATA INICIAL`,REGIÃO,ESTADO,PRODUTO,`PREÇO MÉDIO REVENDA`)
+head(Combustível,N=5)
+
+# Lendo os dados de Dólar
+Dolár <- read_csv("C:/Users/flavi/OneDrive/MBA Data Science & Analytics/TCC/TCC_Data Science & Analytics/usd.csv")
+Dolár <- Dolár %>%
+  select(Data,Último)
+head(Dolár,N=5)
+
+# Mantendo apenas as colunas necessárias em Combustível
+colunas_a_manter <- c("DATA INICIAL")
+colunas_a_alterar <- setdiff(names(Combustível), colunas_a_manter)
+Combustível <- Combustível %>%
+  mutate_at(vars(colunas_a_alterar), ~gsub("-", "NA", .))
+
+# Função para adicionar ponto de milhar
+adicionar_ponto_milhar <- function(numero) {
+  # Usando expressão regular para adicionar ponto após as duas últimas casas decimais
+  gsub("(\\d+)(\\d{2}$)", "\\1.\\2", numero, perl = TRUE)
+}
+
+# Aplicando a função às colunas especificadas em Brent
+Brent <- Brent %>%
+  mutate_at(vars(`Último`), ~adicionar_ponto_milhar(as.character(.)))
+
+# Função para adicionar ponto decimal contando um caractere da esquerda para a direita
+adicionar_ponto_decimal <- function(numero) {
+  # Usando expressão regular para adicionar ponto decimal após um caractere da esquerda para a direita
+  gsub("(\\d{1})(\\d+)", "\\1.\\2", numero)
+}
+
+# Aplicando a função às colunas numéricas em Dólar
+Dolár <- Dolár %>%
+  mutate_at(vars(`Último`), ~adicionar_ponto_decimal(as.character(.)))
+
+# Convertendo coluna de data para formato Date em Dólar
+Dolár$Data <- as.Date(Dolár$Data, format = "%d.%m.%Y")
+
+# Convertendo colunas numéricas para tipo de dados numérico em Dólar
+Dolár <- Dolár %>%
+  mutate(
+    Último = as.numeric(Último)
+  )
+
+print(Dolár)
+
+# Convertendo coluna de data para formato Date em Brent
+Brent$Data <- as.Date(Brent$Data, format = "%d.%m.%Y")
+
+# Convertendo colunas numéricas para tipo de dados numérico em Brent
+Brent <- Brent %>%
+  mutate(
+    Último = as.numeric(Último)
+  )
+
+print(Brent)
+
+
+# Convertendo colunas numéricas para tipo de dados numérico em Combustível
+Combustível <- Combustível %>%
+  mutate(
+    `PREÇO MÉDIO REVENDA` = as.numeric(`PREÇO MÉDIO REVENDA`),
+    # Outras colunas numéricas, se houver
+  )
+print(Combustível)
+
+# Mesclando os dataframes com base na data
+Brent_Reais <- inner_join(Dolár, Brent, by = "Data")
+
+# Manter apenas as colunas 'coluna1' e 'coluna2' do dataframe 'dados'
+Brent_Reais <- Brent_Reais %>%
+  select(Data, Último.x, Último.y)
+
+# Calculando o produto dos valores "Último"
+Brent_Reais <- Brent_Reais %>%
+  mutate(ValorBrent = Último.x * Último.y)
+
+print(Brent_Reais)
+
+# Usando a função spread para organizar os produtos na forma de colunas
+Combustível <- Combustível %>%
+  spread(PRODUTO, `PREÇO MÉDIO REVENDA`)
+
+print(Combustível)
+
+# Renomeando a coluna "DATA INICIAL" para "Data" em Combustível
+names(Combustível)[1] <- "Data"
+
+# Selecionando apenas a coluna "ValorBrent" do dataframe Brent_Reais
+Brent_Reais_ValorBrent <- Brent_Reais %>%
+  select(Data, ValorBrent)
+
+# Realizando o join apenas com a coluna "ValorBrent" do dataframe Brent_Reais
+Combustíveis_Brent_Reais <- inner_join(Combustível, Brent_Reais_ValorBrent, by = "Data")
+
+# Mesclando os dataframes com base na data
+Combustíveis_Brent_Reais <- inner_join(Combustível, Brent_Reais_ValorBrent, by = "Data")
+
+# Criando o gráfico de dispersão por tipo de combustível
+ggplot(Combustíveis_Brent_Reais_long, aes(x = ValorBrent, y = Preço)) +
+  geom_point() +
+  facet_wrap(~ Produto, scales = "free") +
+  labs(x = "Preço do Brent", y = "Preço Médio de Revenda") +
+  ggtitle("Preço de Combustíveis vs Preço do Brent por Tipo de Combustível") +
+  theme_minimal()
+
